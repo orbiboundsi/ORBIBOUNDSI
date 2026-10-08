@@ -1,16 +1,27 @@
-## Hi there 👋
+# OrbiBound AI
 
-<!--
-**orbiboundsi/ORBIBOUNDSI** is a ✨ _special_ ✨ repository because its `README.md` (this file) appears on your GitHub profile.
+B2B satellite intelligence for hedge funds and supply-chain operators.
 
-Here are some ideas to get you started:
+## Current phase
 
-- 🔭 I’m currently working on ...
-- 🌱 I’m currently learning ...
-- 👯 I’m looking to collaborate on ...
-- 🤔 I’m looking for help with ...
-- 💬 Ask me about ...
-- 📫 How to reach me: ...
-- 😄 Pronouns: ...
-- ⚡ Fun fact: ...
--->
+**Phase 1 — GitHub Foundation Structure** establishes the monorepo layout, strict TypeScript baseline, environment contract, documentation, and CI skeleton. Business logic and production schema changes are intentionally deferred to later approved phases.
+
+## Workspace
+
+- `apps/web` — Next.js application (future phase)
+- `apps/worker` — scheduled processing worker (future phase)
+- `packages/database` — Supabase database client/types (future phase)
+- `packages/stac-fetcher` — STAC metadata client (future phase)
+- `packages/anomaly-engine` — explainable scoring engine (future phase)
+- `supabase` — migrations, seed and database tests
+- `docs` — architecture and development workflow
+
+## Development
+
+```bash
+pnpm install
+pnpm typecheck
+pnpm test
+```
+
+Do not commit `.env` files or service credentials. Every code change requires Supabase verification and synchronization with `orbiboundsi/ORBIBOUNDSI` before completion is reported.
