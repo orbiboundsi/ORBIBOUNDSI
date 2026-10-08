@@ -4,4 +4,4 @@ Asset endpoints are planned for the web adapter: `GET /api/assets`, `POST /api/a
 
 The backend service validates asset name, GeoJSON Polygon closure and coordinate bounds, refresh frequency, and alert threshold before delegating to a repository. Production repository adapters must use the authorized Supabase client and rely on RLS; tests may inject a minimal contract fixture only.
 
-Phase 3 implements the service and validation contracts. Next.js route handlers remain an adapter concern for the Web phase because the Phase 1 web app is intentionally only a placeholder; no duplicate API implementation or hardcoded response data was added.
+Phase 4 implements these Next.js route handlers in `apps/web/app/api/assets`. They use the authenticated Supabase session, the typed `AssetService`, a Supabase repository adapter, PostGIS WKT conversion, request IDs, and standard JSON error responses. No service-role key is used in route handlers and no hardcoded response data is included.
