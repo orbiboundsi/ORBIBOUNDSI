@@ -1,3 +1,3 @@
-export { fetchSatelliteMetadata } from './client.js';
+export { fetchSatelliteMetadata, findBandAsset } from './client.js';
 export { StacFetcherError } from './errors.js';
-export type { BoundingBox, FetchOptions, FetchResult, SatelliteAsset, SatelliteScene, StacFetcherConfig } from './types.js';
+export type { BandMetadata, BoundingBox, FetchOptions, FetchResult, SatelliteAsset, SatelliteScene, SpectralBand, StacFetcherConfig } from './types.js';
