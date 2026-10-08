@@ -1,0 +1,2 @@
+-- Phase 1 intentionally contains no production seed data.
+-- Add non-sensitive local fixtures only after the Database phase is approved.
