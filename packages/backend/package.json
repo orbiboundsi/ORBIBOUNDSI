@@ -1,0 +1,8 @@
+{
+  "name": "@orbibound-ai/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "typecheck": "tsc --noEmit", "test": "tsx --test tests/*.test.ts" },
+  "dependencies": { "@orbibound-ai/database": "workspace:*", "@orbibound-ai/stac-fetcher": "workspace:*", "@orbibound-ai/anomaly-engine": "workspace:*" }
+}
