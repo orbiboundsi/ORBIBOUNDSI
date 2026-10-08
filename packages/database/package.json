@@ -1,0 +1,10 @@
+{
+  "name": "@orbibound-ai/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test"
+  }
+}
