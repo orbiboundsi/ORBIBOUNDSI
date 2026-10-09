@@ -1,5 +1,9 @@
 import { computeRiskScore, type AnomalyResult } from '@orbibound-ai/anomaly-engine';
-import type { ClaimedAsset, ProcessingOutcome, WorkerDependencies } from './types.js';
+import type { ClaimedAsset, ProcessingOutcome, WorkerDependencies, WorkerProcessingStatus } from './types.js';
+
+function warmupStatus(observationCount: number): WorkerProcessingStatus {
+  return observationCount >= 3 ? 'ready' : 'warming_up';
+}
 
 export async function processAsset(asset: ClaimedAsset, dependencies: WorkerDependencies): Promise<ProcessingOutcome> {
   const now = dependencies.now ?? (() => new Date());
@@ -9,8 +13,28 @@ export async function processAsset(asset: ClaimedAsset, dependencies: WorkerDepe
   try {
     const selected = await dependencies.fetchMetadata(asset);
     const cog = await dependencies.readCog(asset, selected);
-    const history = await dependencies.loadHistory(asset.id);
-    const result: AnomalyResult = computeRiskScore(history, cog.scene);
+    const inserted = await dependencies.recordObservation(asset.id, cog.scene);
+    const observations = await dependencies.loadHistory(asset.id);
+    const historicalScenes = observations.filter((scene) => scene.sceneId !== cog.scene.sceneId);
+
+    if (!inserted) {
+      const status = warmupStatus(observations.length);
+      await dependencies.updateAsset(asset.id, { status, sceneId: selected.sceneId, errorMessage: null });
+      await dependencies.writeLog({ assetId: asset.id, status: 'skipped', sceneId: selected.sceneId, bytesRead: cog.bytesRead, processingTimeMs: now().getTime() - started, cloudCover: selected.cloudCover, errorCode: 'OBSERVATION_DUPLICATE', errorMessage: 'Scene was already recorded; baseline was not changed.' });
+      await dependencies.updateSchedule(asset.id, true, asset.refresh_frequency_days, workerId, now());
+      return { assetId: asset.id, status, errorCode: 'OBSERVATION_DUPLICATE' };
+    }
+
+    if (historicalScenes.length < 3) {
+      const status = warmupStatus(observations.length);
+      const message = status === 'ready' ? 'Three valid observations collected; scoring begins on the next new observation.' : `Baseline warm-up: ${observations.length} of 3 valid observations collected.`;
+      await dependencies.updateAsset(asset.id, { status, sceneId: selected.sceneId, errorMessage: null });
+      await dependencies.writeLog({ assetId: asset.id, status: 'skipped', sceneId: selected.sceneId, bytesRead: cog.bytesRead, processingTimeMs: now().getTime() - started, currentValue: cog.scene.meanReflectance, cloudCover: selected.cloudCover, errorCode: 'BASELINE_WARMUP', errorMessage: message });
+      await dependencies.updateSchedule(asset.id, true, asset.refresh_frequency_days, workerId, now());
+      return { assetId: asset.id, status, errorCode: 'BASELINE_WARMUP' };
+    }
+
+    const result: AnomalyResult = computeRiskScore(historicalScenes, cog.scene);
     await dependencies.updateAsset(asset.id, { riskScore: result.riskScore, status: 'complete', sceneId: selected.sceneId, errorMessage: null });
     await dependencies.writeLog({ assetId: asset.id, status: 'succeeded', sceneId: selected.sceneId, bytesRead: cog.bytesRead, processingTimeMs: now().getTime() - started, riskScore: result.riskScore, baselineValue: result.baselineValue, currentValue: result.currentValue, zScore: result.zScore, cloudCover: selected.cloudCover });
     if (dependencies.sendAlert !== undefined && result.riskScore >= asset.alert_threshold) {

@@ -67,6 +67,47 @@ export type Database = {
           },
         ]
       }
+      asset_observations: {
+        Row: {
+          asset_id: string
+          cloud_cover: number
+          created_at: string
+          id: string
+          mean_reflectance: number
+          observed_at: string
+          scene_datetime: string
+          scene_id: string
+        }
+        Insert: {
+          asset_id: string
+          cloud_cover: number
+          created_at?: string
+          id?: string
+          mean_reflectance: number
+          observed_at?: string
+          scene_datetime: string
+          scene_id: string
+        }
+        Update: {
+          asset_id?: string
+          cloud_cover?: number
+          created_at?: string
+          id?: string
+          mean_reflectance?: number
+          observed_at?: string
+          scene_datetime?: string
+          scene_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asset_observations_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "monitored_assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       asset_alert_configs: {
         Row: {
           asset_id: string
