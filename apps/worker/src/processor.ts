@@ -1,6 +1,35 @@
-import { computeRiskScore, type AnomalyResult, type SceneData } from '@orbibound-ai/anomaly-engine';
+import { computeRiskScore, type AnomalyResult } from '@orbibound-ai/anomaly-engine';
 import type { ClaimedAsset, ProcessingOutcome, WorkerDependencies } from './types.js';
 
-export async function processAsset(asset: ClaimedAsset, dependencies: WorkerDependencies): Promise<ProcessingOutcome> { const now = dependencies.now ?? (() => new Date()); const workerId = dependencies.workerId ?? 'worker'; const started = now().getTime(); await dependencies.writeLog({ assetId: asset.id, status: 'started' }); try { const selected = await dependencies.fetchMetadata(asset); const cog = await dependencies.readCog(asset, selected); const history = await dependencies.loadHistory(asset.id); const result = computeRiskScore(history, cog.scene); await dependencies.updateAsset(asset.id, { riskScore: result.riskScore, status: 'complete', sceneId: selected.sceneId, errorMessage: null }); await dependencies.writeLog({ assetId: asset.id, status: 'succeeded', sceneId: selected.sceneId, bytesRead: cog.bytesRead, processingTimeMs: now().getTime() - started, riskScore: result.riskScore, baselineValue: result.baselineValue, currentValue: result.currentValue, zScore: result.zScore, cloudCover: selected.cloudCover }); await dependencies.updateSchedule(asset.id, true, asset.refresh_frequency_days, workerId, now()); return { assetId: asset.id, status: 'complete', result }; } catch (error: unknown) { const errorCode = error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : error instanceof Error ? error.name : 'WORKER_ERROR'; const errorMessage = error instanceof Error ? error.message : 'Unknown worker error'; await dependencies.updateAsset(asset.id, { status: 'failed', errorMessage }); await dependencies.writeLog({ assetId: asset.id, status: 'failed', processingTimeMs: now().getTime() - started, errorCode, errorMessage }); await dependencies.updateSchedule(asset.id, false, asset.refresh_frequency_days, workerId, now()); return { assetId: asset.id, status: 'failed', errorCode }; } }
+export async function processAsset(asset: ClaimedAsset, dependencies: WorkerDependencies): Promise<ProcessingOutcome> {
+  const now = dependencies.now ?? (() => new Date());
+  const workerId = dependencies.workerId ?? 'worker';
+  const started = now().getTime();
+  await dependencies.writeLog({ assetId: asset.id, status: 'started' });
+  try {
+    const selected = await dependencies.fetchMetadata(asset);
+    const cog = await dependencies.readCog(asset, selected);
+    const history = await dependencies.loadHistory(asset.id);
+    const result: AnomalyResult = computeRiskScore(history, cog.scene);
+    await dependencies.updateAsset(asset.id, { riskScore: result.riskScore, status: 'complete', sceneId: selected.sceneId, errorMessage: null });
+    await dependencies.writeLog({ assetId: asset.id, status: 'succeeded', sceneId: selected.sceneId, bytesRead: cog.bytesRead, processingTimeMs: now().getTime() - started, riskScore: result.riskScore, baselineValue: result.baselineValue, currentValue: result.currentValue, zScore: result.zScore, cloudCover: selected.cloudCover });
+    if (dependencies.sendAlert !== undefined && result.riskScore >= asset.alert_threshold) {
+      try { await dependencies.sendAlert(asset, result, selected.sceneId); } catch { /* Alert delivery is isolated from satellite processing. */ }
+    }
+    await dependencies.updateSchedule(asset.id, true, asset.refresh_frequency_days, workerId, now());
+    return { assetId: asset.id, status: 'complete', result };
+  } catch (error: unknown) {
+    const errorCode = error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : error instanceof Error ? error.name : 'WORKER_ERROR';
+    const errorMessage = error instanceof Error ? error.message : 'Unknown worker error';
+    await dependencies.updateAsset(asset.id, { status: 'failed', errorMessage });
+    await dependencies.writeLog({ assetId: asset.id, status: 'failed', processingTimeMs: now().getTime() - started, errorCode, errorMessage });
+    await dependencies.updateSchedule(asset.id, false, asset.refresh_frequency_days, workerId, now());
+    return { assetId: asset.id, status: 'failed', errorCode };
+  }
+}
 
-export async function processBatch(assets: ClaimedAsset[], dependencies: WorkerDependencies): Promise<ProcessingOutcome[]> { const outcomes: ProcessingOutcome[] = []; for (const asset of assets) outcomes.push(await processAsset(asset, dependencies)); return outcomes; }
+export async function processBatch(assets: ClaimedAsset[], dependencies: WorkerDependencies): Promise<ProcessingOutcome[]> {
+  const outcomes: ProcessingOutcome[] = [];
+  for (const asset of assets) outcomes.push(await processAsset(asset, dependencies));
+  return outcomes;
+}
