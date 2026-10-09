@@ -4,5 +4,5 @@
   "private": true,
   "type": "module",
   "scripts": { "start": "tsx src/main.ts", "typecheck": "tsc --noEmit", "test": "tsx --test tests/*.test.ts" },
-  "dependencies": { "@orbibound-ai/anomaly-engine": "workspace:*", "@orbibound-ai/cog-reader": "workspace:*", "@orbibound-ai/database": "workspace:*", "@orbibound-ai/stac-fetcher": "workspace:*", "@supabase/supabase-js": "^2.45.4" }
+  "dependencies": { "@orbibound-ai/alert-service": "workspace:*", "@orbibound-ai/anomaly-engine": "workspace:*", "@orbibound-ai/cog-reader": "workspace:*", "@orbibound-ai/database": "workspace:*", "@orbibound-ai/stac-fetcher": "workspace:*", "@supabase/supabase-js": "^2.45.4" }
 }
