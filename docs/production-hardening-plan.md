@@ -736,3 +736,31 @@ This project must not claim verified environmental risk until H5 scientific vali
 ## Recommended next approval checkpoint
 
 The next implementation approval should cover **H3 Authentication UX + runtime two-user RLS testing**. H4 can be planned in parallel, but no production launch gate should be marked complete until H3's runtime isolation evidence is available.
+
+## H3 Implementation Status — Authentication UX
+
+**Status:** Application implementation complete; runtime two-user RLS evidence pending test-user fixture.
+
+### Implemented
+
+- Supabase browser client using the publishable key only.
+- Login, signup, logout, password reset, recovery callback, and password update routes.
+- Session-aware middleware for dashboard and asset pages.
+- Safe post-auth redirect handling that blocks external open redirects.
+- Expired/invalid recovery-link error states.
+- Branded auth shell aligned with the existing OrbiBound visual system.
+- Logout control in the authenticated application shell.
+- Optional two-user Supabase integration test harness covering assets, observations, logs, schedules, and alert history.
+- Test credentials documented as environment placeholders only; no credentials committed.
+
+### Validation
+
+- Workspace typecheck: passed.
+- Web lint: passed.
+- Web unit/integration test command: 7 passed, 1 skipped because `SUPABASE_TEST_USER_A_*` and `SUPABASE_TEST_USER_B_*` are not configured.
+- Web production build: passed; auth routes and middleware compiled successfully.
+- Supabase migration: no new migration required for the auth UI changes.
+
+### Remaining H3 gate
+
+Run the integration test with two dedicated authenticated staging users and record the runtime RLS result. Until that run passes, H3 is application-complete but not fully security-gate-complete.
