@@ -764,3 +764,210 @@ The next implementation approval should cover **H3 Authentication UX + runtime t
 ### Remaining H3 gate
 
 Run the integration test with two dedicated authenticated staging users and record the runtime RLS result. Until that run passes, H3 is application-complete but not fully security-gate-complete.
+
+## H4 Detailed Execution Plan — Worker Scheduler, Locking, and Recovery
+
+**Status:** Planning approved; implementation not started.
+**Objective:** Worker کو deterministic, non-overlapping, observable اور recoverable scheduled processing runtime میں تبدیل کرنا۔
+
+### H4 design decision
+
+Current worker ایک finite `claimAndProcess()` invocation ہے۔ H4 میں processing core کو finite run کے طور پر برقرار رکھتے ہوئے scheduler کو الگ layer بنایا جائے گا۔ اس سے:
+
+- local tests deterministic رہیں گے؛
+- external scheduler، managed cron، یا persistent process میں deployment ممکن رہے گی؛
+- ایک process کے اندر uncontrolled overlapping loops نہیں بنیں گے؛
+- Supabase claim RPC اصل concurrency boundary رہے گی۔
+
+**Recommended runtime contract:** ہر invocation زیادہ سے زیادہ 50 due assets claim کرے، ایک run کا result/exit status واپس کرے، اور اگلا invocation 15 منٹ بعد scheduler چلائے۔ اگر deployment target long-running process ہو تو یہی run-once function guarded interval کے ذریعے call ہوگا، مگر concurrent invocation lock لازمی رہے گا۔
+
+### H4 workstreams
+
+#### H4-A — Run lifecycle contract
+
+1. `runWorkerOnce()` function introduce کرنا، جو ایک bounded execution کو represent کرے۔
+2. Run result میں یہ fields شامل کرنا:
+   - worker ID
+   - started/finished timestamps
+   - claimed count
+   - succeeded count
+   - failed count
+   - skipped count
+   - duration
+   - terminal error summary
+3. Empty queue کو successful no-op سمجھنا، failure نہیں۔
+4. Per-asset failure کو باقی claimed assets سے isolate کرنا؛ ایک asset failure پوری batch کو silently abort نہ کرے۔
+5. Process exit code صرف infrastructure-level failure پر non-zero ہو۔
+6. `maxAssets`، claim stale-after، API timeout، retry count، اور interval کو environment/config سے لینا؛ hardcode نہ کرنا۔
+
+#### H4-B — Scheduler adapter
+
+1. `WORKER_INTERVAL_MINUTES` کا validated configuration contract بنانا؛ default 15 منٹ۔
+2. Long-running mode میں startup پر ایک run، پھر fixed-delay یا fixed-interval policy میں سے ایک واضح policy منتخب کرنا۔
+3. Run overlap guard شامل کرنا تاکہ previous run active ہو تو نیا run skip ہو۔
+4. Graceful shutdown:
+   - `SIGTERM`/`SIGINT` پر نئے claims روکنا؛
+   - active asset processing کو bounded drain window دینا؛
+   - timer clear کرنا؛
+   - final run summary log کرنا۔
+5. Finite mode برقرار رکھنا تاکہ deployment cron/managed scheduler کے ذریعے بھی ہو سکے۔
+6. Deployment target کو implementation سے پہلے document کرنا؛ sandbox کو production scheduler نہیں مانا جائے گا۔
+
+#### H4-C — Claiming and locking
+
+1. Existing `claim_due_asset_schedules` RPC کے `SKIP LOCKED` behavior کو concurrent test میں verify کرنا۔
+2. Lock ownership ہر update/finalization query میں `asset_id + locked_by` سے enforce کرنا۔
+3. Stale lock threshold configurable رکھنا؛ موجودہ 30-minute contract preserve کرنا جب تک evidence-based change approve نہ ہو۔
+4. Claim کے بعد process crash simulation کرنا اور stale lock recovery prove کرنا۔
+5. Verify کرنا کہ failed finalization پر lock indefinitely برقرار نہیں رہتا۔
+6. Duplicate processing test میں دو worker IDs، overlapping due schedules، اور same asset شامل کرنا۔
+7. RPC grants/revokes unchanged رہیں؛ worker path صرف trusted service role سے call کرے۔
+
+#### H4-D — Retry and failure recovery
+
+1. STAC 429/5xx/timeout کو bounded exponential backoff کے ساتھ handle کرنا۔
+2. COG read timeout/range failure کو asset-level failure بنانا، worker-wide crash نہیں۔
+3. Supabase transient error پر safe retry policy define کرنا؛ non-idempotent writes blind retry نہیں ہوں گی۔
+4. Retry exhaustion پر:
+   - asset status `failed` یا agreed retryable state؛
+   - structured processing log؛
+   - failure count increment؛
+   - next run scheduled with jitter؛
+   - lock released۔
+5. Permanent input errors اور transient infrastructure errors کے لیے الگ error codes رکھنا۔
+6. Failed assets کے لیے manual replay command/documented procedure شامل کرنا۔
+
+#### H4-E — Observability
+
+1. Structured JSON-compatible logs میں شامل کرنا:
+   - `worker_id`
+   - `asset_id`
+   - `scene_id`
+   - `run_id`
+   - `started_at`
+   - `duration_ms`
+   - `status`
+   - `error_code`
+2. Secrets، service-role key، webhook URL، SMTP password یا raw authorization headers log نہیں ہوں گے۔
+3. Run metrics:
+   - claimed assets
+   - completed assets
+   - failed assets
+   - warm-up assets
+   - duplicate observations
+   - bytes read
+   - average/p95 processing duration where runtime supports aggregation
+4. Worker heartbeat/last successful run visibility کے لیے پہلے existing logs/operational table evaluate کرنا؛ نئی Supabase table صرف ضرورت ثابت ہونے پر add ہوگی۔
+5. Scheduler silence، repeated failures، queue backlog اور stale lock کے لیے operational alert thresholds document کرنا۔
+
+#### H4-F — Configuration and deployment
+
+1. Configuration schema/loader add کرنا:
+   - `WORKER_ID`
+   - `WORKER_MAX_ASSETS`
+   - `WORKER_INTERVAL_MINUTES`
+   - `WORKER_STALE_AFTER_MINUTES`
+   - `WORKER_SHUTDOWN_TIMEOUT_MS`
+   - `WORKER_RUN_ONCE`
+   - STAC/API retry settings
+2. Invalid values پر startup validation اور safe error message۔
+3. Deployment choices document کرنا:
+   - preferred: managed/application-native scheduled invocation؛
+   - alternative: persistent Node process with guarded interval؛
+   - local development: run-once command۔
+4. Chosen deployment target کے secrets server-side رکھنا۔
+5. Production scheduler کو sandbox process یا chat task سے replace نہیں کیا جائے گا۔
+
+### H4 proposed file changes
+
+- `apps/worker/src/main.ts`: run-once/long-running mode and signal handling
+- `apps/worker/src/runner.ts`: bounded run lifecycle and summary result
+- `apps/worker/src/scheduler.ts`: interval, overlap guard, shutdown behavior
+- `apps/worker/src/config.ts`: strict environment parsing
+- `apps/worker/src/repository.ts`: lock-safe finalization and recovery helpers where required
+- `apps/worker/src/types.ts`: run summary, scheduler state, failure categories
+- `apps/worker/tests/runner.test.ts`: success, empty queue, per-asset isolation
+- `apps/worker/tests/scheduler.test.ts`: interval, overlap, shutdown
+- `apps/worker/tests/repository.test.ts`: ownership lock, stale lock, retry/finalization
+- `apps/worker/tests/worker.integration.test.ts`: concurrent claim and crash recovery fixture
+- `docs/worker-operations.md`: deployment, replay, health, incident runbook
+- `supabase/migrations/`: only if live schema requires additive worker health/run tracking fields
+
+### H4 test matrix
+
+| Area | Required verification |
+|---|---|
+| Run lifecycle | bounded run returns deterministic summary |
+| Empty queue | zero claims is successful no-op |
+| Per-asset isolation | one failed asset does not hide other results |
+| Concurrent claim | two workers cannot claim same due schedule |
+| Lock ownership | wrong worker cannot finalize another worker's claim |
+| Stale recovery | abandoned lock becomes claimable after threshold |
+| Retry | 429/5xx/timeout use bounded backoff |
+| COG failure | asset fails explainably and lock releases |
+| Database failure | infrastructure failure is visible and recoverable |
+| Duplicate scene | observation count is not inflated |
+| Warm-up | first two observations remain warm-up; third enables ready |
+| Scheduler | 15-minute configuration and no overlap |
+| Shutdown | signal clears timer and stops new claims |
+| Restart | process restart does not strand assets permanently |
+| Configuration | invalid/missing values fail safely |
+| Logs | context present; secrets absent |
+| Regression | full workspace typecheck/lint/tests pass |
+
+### H4 Supabase impact assessment
+
+**Expected default:** no new migration. Existing schedules, claim RPC, locks, processing logs, and baseline observations should be sufficient.
+
+A migration is justified only if observability proves that existing records cannot represent a required state, such as durable worker-run summaries or heartbeat history. If required, migration must:
+
+- be additive and backward-compatible;
+- enable RLS immediately;
+- restrict writes to the trusted worker role;
+- define user-facing reads through asset ownership;
+- include indexes and retention policy;
+- be applied and live-verified before claiming H4 complete.
+
+### H4 execution sequence after implementation approval
+
+1. Capture current worker baseline and run existing tests.
+2. Add strict config parser and run lifecycle without changing database behavior.
+3. Add scheduler adapter and graceful shutdown.
+4. Add lock/recovery tests against the authorized test environment or deterministic database fixture.
+5. Add retry/failure classification and structured summaries.
+6. Run local typecheck, lint, unit, integration, build, and secret scan.
+7. Decide and document deployment target; do not claim production scheduling from local execution.
+8. Apply/verify Supabase migration only if the impact assessment requires one.
+9. Sync code/docs/migration to GitHub `main`.
+10. Wait for GitHub CI and verify the exact commit.
+11. Run a controlled smoke test with one safe due asset and record evidence.
+12. Update this plan with runtime/deployment status and remaining limitations.
+
+### H4 rollback plan
+
+1. Stop the scheduler or disable the new deployment invocation.
+2. Allow active bounded run to finish or terminate after shutdown timeout.
+3. Revert application commit if run lifecycle/regression tests fail.
+4. If a migration was applied, use a controlled forward rollback migration; do not manually delete operational history.
+5. Verify existing claim RPC, lock release, and one safe worker run.
+6. Re-enable scheduling only after CI and smoke verification pass.
+
+### H4 acceptance gate
+
+H4 complete تب مانا جائے گا جب:
+
+- 15-minute schedule کا selected deployment evidence available ہو؛
+- run-once and scheduled modes دونوں deterministic ہوں؛
+- concurrent workers duplicate claim نہ کر سکیں؛
+- stale locks recover ہوں؛
+- per-asset failures isolated, logged, rescheduled اور unlocked ہوں؛
+- retry/backoff bounded ہو؛
+- graceful shutdown اور restart recovery pass ہوں؛
+- structured health/run evidence available ہو؛
+- no secrets logs/client output میں ہوں؛
+- local tests، required Supabase verification، GitHub sync اور CI pass ہوں؛
+- limitations واضح طور پر documented ہوں۔
+
+### H4 approval boundary
+
+یہ document صرف planning approval record کرتا ہے۔ Implementation شروع کرنے سے پہلے deployment target، scheduler mode (managed invocation یا persistent process)، اور اگر required ہو تو worker health persistence کے لیے الگ explicit approval لیا جائے گا۔
