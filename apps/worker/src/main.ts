@@ -1,9 +1,14 @@
 import { createWorkerClient } from './repository.js';
 import { claimAndProcess } from './pipeline.js';
+import { loadWorkerConfig } from './config.js';
 
-const apiUrl = process.env.STAC_API_URL ?? 'https://earth-search.aws.element84.com/v1/search';
-const collection = process.env.STAC_COLLECTION ?? 'sentinel-2-l2a';
+const config = loadWorkerConfig();
 const client = createWorkerClient();
-const workerId = process.env.WORKER_ID ?? `worker-${process.pid}`;
 
-await claimAndProcess(client, apiUrl, collection, workerId, 50);
+try {
+  await claimAndProcess(client, config.stacApiUrl, config.stacCollection, config.workerId, config.maxAssets, config.staleAfterMinutes);
+} catch (error: unknown) {
+  const message = error instanceof Error ? error.message : 'Unknown worker failure';
+  console.error(JSON.stringify({ event: 'worker_run_failed', workerId: config.workerId, error: message }));
+  process.exitCode = 1;
+}

@@ -14,9 +14,9 @@ export function createWorkerClient(): Client {
   return createClient<Database>(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
 }
 
-export async function claimDueAssets(client: Client, workerId: string, maxAssets = 50): Promise<ClaimedAsset[]> {
+export async function claimDueAssets(client: Client, workerId: string, maxAssets = 50, staleAfterMinutes = 30): Promise<ClaimedAsset[]> {
   const rpc = client as unknown as RpcClient;
-  const { data, error } = await rpc.rpc('claim_due_asset_schedules', { p_worker_id: workerId, p_limit: maxAssets, p_stale_after: '30 minutes' });
+  const { data, error } = await rpc.rpc('claim_due_asset_schedules', { p_worker_id: workerId, p_limit: maxAssets, p_stale_after: `${staleAfterMinutes} minutes` });
   if (error) throw new Error(`CLAIM_ERROR: ${error.message}`);
   return Array.isArray(data) ? data.map((row: unknown) => row as ClaimedAsset) : [];
 }

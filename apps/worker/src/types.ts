@@ -52,3 +52,23 @@ export interface ProcessingOutcome {
   result?: AnomalyResult;
   errorCode?: string;
 }
+
+export interface WorkerRunSummary {
+  runId: string;
+  workerId: string;
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+  claimedCount: number;
+  completedCount: number;
+  failedCount: number;
+  skippedCount: number;
+}
+
+export interface WorkerConfig {
+  workerId: string;
+  stacApiUrl: string;
+  stacCollection: string;
+  maxAssets: number;
+  staleAfterMinutes: number;
+}

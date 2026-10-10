@@ -4,8 +4,9 @@ import { sendAlert, SmtpSender, WebhookSender, type AlertConfig, type AlertSende
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '@orbibound-ai/database';
 import { claimDueAssets, loadObservations, recordObservation, updateAsset, updateSchedule, writeProcessingLog } from './repository.js';
-import { processAsset } from './processor.js';
-import type { ClaimedAsset, WorkerDependencies } from './types.js';
+import { processBatch } from './processor.js';
+import type { ClaimedAsset, WorkerDependencies, WorkerRunSummary } from './types.js';
+import { createRunSummary, logRunSummary } from './runner.js';
 
 type WorkerClient = SupabaseClient<Database>;
 interface Polygon { type: 'Polygon'; coordinates: number[][][] }
@@ -82,9 +83,13 @@ export function createDependencies(client: WorkerClient, apiUrl: string, collect
   };
 }
 
-export async function claimAndProcess(client: WorkerClient, apiUrl: string, collection = 'sentinel-2-l2a', workerId?: string, maxAssets = 50): Promise<void> {
+export async function claimAndProcess(client: WorkerClient, apiUrl: string, collection = 'sentinel-2-l2a', workerId?: string, maxAssets = 50, staleAfterMinutes = 30): Promise<WorkerRunSummary> {
+  const startedAt = new Date();
   const id = workerId ?? `worker-${process.pid}`;
-  const assets = await claimDueAssets(client, id, maxAssets);
+  const assets = await claimDueAssets(client, id, maxAssets, staleAfterMinutes);
   const dependencies = createDependencies(client, apiUrl, collection, id);
-  for (const asset of assets) await processAsset(asset, dependencies);
+  const outcomes = await processBatch(assets, dependencies);
+  const summary = createRunSummary(id, startedAt, new Date(), assets.length, outcomes);
+  logRunSummary(summary);
+  return summary;
 }

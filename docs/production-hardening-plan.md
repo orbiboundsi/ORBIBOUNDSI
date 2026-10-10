@@ -971,3 +971,39 @@ H4 complete تب مانا جائے گا جب:
 ### H4 approval boundary
 
 یہ document صرف planning approval record کرتا ہے۔ Implementation شروع کرنے سے پہلے deployment target، scheduler mode (managed invocation یا persistent process)، اور اگر required ہو تو worker health persistence کے لیے الگ explicit approval لیا جائے گا۔
+
+## H4 Implementation Status — Run-once Worker Contract
+
+**Status:** Run-once worker implementation complete; managed scheduler deployment execution remains an external deployment gate.
+
+### Implemented
+
+- Strict worker configuration parser with batch and stale-lock limits.
+- Deterministic run summary with claimed/completed/failed/skipped counts and duration.
+- Run-once entrypoint with non-zero exit on top-level infrastructure/configuration failure.
+- Configurable stale-lock duration passed to the claim RPC.
+- Worker README and operations runbook for managed 15-minute invocation.
+- Repository unit test for claim RPC arguments.
+- Supabase claim RPC migration now includes `pending`, `warming_up`, `ready`, `complete`, and `failed` assets, preventing H2 warm-up assets from becoming stuck.
+
+### Local validation
+
+- Workspace typecheck: passed.
+- Workspace lint: passed.
+- Workspace tests: passed; web runtime RLS test remains the previously documented skip without two test users.
+- H4 worker tests: passed.
+- Secret scan: passed after excluding documented `...` placeholders; no credential value is present.
+
+### Supabase verification
+
+Migration `h4_claim_warmup_assets` was applied to project `thrgxznmblxtlzbicsrk`. Live verification confirms:
+
+- Claim function includes all five eligible processing states.
+- `SECURITY DEFINER` and `search_path = public` remain set.
+- `anon` execute: denied.
+- `authenticated` execute: denied.
+- `service_role` execute: allowed.
+
+### Remaining H4 gate
+
+The managed scheduler itself must be configured and its execution history/smoke test recorded in the selected deployment environment. Local run-once success does not claim that a remote 15-minute scheduler is active.
