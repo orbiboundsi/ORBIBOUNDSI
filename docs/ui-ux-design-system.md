@@ -2,7 +2,9 @@
 
 ## Status
 
-**Phase 8A specification — awaiting design-direction confirmation before frontend implementation.**
+**Product interaction and information-architecture reference.** The approved visual direction is documented in [`visual-language.md`](visual-language.md) and supersedes the legacy palette, typography, card, and elevation styling described below.
+
+OrbiBound's visual language is approved for the current app and is the reusable default for future product interfaces. Retain the product-flow, API, data-integrity, accessibility, and responsive requirements in this document; follow `visual-language.md` for all visual tokens and surface treatments.
 
 ## Design Read
 

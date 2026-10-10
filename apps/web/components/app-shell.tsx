@@ -1,6 +1,74 @@
 'use client';
+
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { useState } from 'react';
 import type { ReactNode } from 'react';
 
-interface AppShellProps { children: ReactNode }
-const navigation = [{ label: 'Overview', icon: '◈', active: true }, { label: 'Assets', icon: '⌁' }, { label: 'Alerts', icon: '!' }, { label: 'Processing', icon: '↻' }, { label: 'Settings', icon: '⚙' }];
-export function AppShell({ children }: AppShellProps): React.ReactElement { return <div className="app-shell"><aside className="sidebar" aria-label="Primary navigation"><div className="brand"><span className="brand-mark" aria-hidden="true" /><span className="brand-copy"><span className="brand-name">OrbiBound AI</span><span className="brand-subtitle">Satellite intelligence</span></span></div><nav><div className="nav-label">Workspace</div><div className="nav-list">{navigation.map((item) => <a className={`nav-item${item.active ? ' active' : ''}`} href={item.active ? '/' : `/#${item.label.toLowerCase()}`} key={item.label} aria-current={item.active ? 'page' : undefined}><span className="nav-icon" aria-hidden="true">{item.icon}</span><span className="nav-text">{item.label}</span></a>)}</div></nav><div className="sidebar-footer"><span className="status-dot" aria-hidden="true" />Pipeline operational</div></aside><div className="main-area"><header className="topbar"><div><div className="eyebrow">Operations workspace</div><div className="mono" style={{ fontSize: 12, marginTop: 3 }}>LIVE / UTC</div></div><div className="topbar-actions"><span className="system-status"><span className="status-dot" aria-hidden="true" />System healthy</span><span className="user-chip"><span className="user-avatar" aria-hidden="true">OB</span><span className="eyebrow">Analyst</span></span></div></header><main className="content">{children}</main></div></div> }
+interface AppShellProps {
+  children: ReactNode;
+}
+
+export function AppShell({ children }: AppShellProps): React.ReactElement {
+  const pathname = usePathname();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const isOverview = pathname === '/';
+  const isAssetForm = pathname.startsWith('/assets/new');
+
+  function closeMenu(): void {
+    setMenuOpen(false);
+  }
+
+  return (
+    <div className="app-shell">
+      <a className="skip-link" href="#main-content">Skip to content</a>
+      <header className="app-header">
+        <Link className="brand" href="/" aria-label="OrbiBound AI home" onClick={closeMenu}>
+          <span className="brand-name">OrbiBound <span>AI</span></span>
+        </Link>
+
+        <button
+          className="menu-toggle button"
+          type="button"
+          aria-expanded={menuOpen}
+          aria-controls="primary-navigation"
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          {menuOpen ? 'Close' : 'Menu'}
+        </button>
+
+        <nav
+          className={`primary-nav${menuOpen ? ' is-open' : ''}`}
+          id="primary-navigation"
+          aria-label="Primary navigation"
+        >
+          <Link className="nav-link" href="/" aria-current={isOverview ? 'page' : undefined} onClick={closeMenu}>
+            Overview
+          </Link>
+          <Link className="nav-link" href="/#assets" onClick={closeMenu}>
+            Assets
+          </Link>
+          <Link
+            className={`button nav-cta${isAssetForm ? ' is-current' : ''}`}
+            href="/assets/new"
+            aria-current={isAssetForm ? 'page' : undefined}
+            onClick={closeMenu}
+          >
+            Add monitored asset
+          </Link>
+        </nav>
+
+        <div className="header-meta" aria-label="Current product phase">
+          <span className="meta-label">Current build</span>
+          <span className="meta-value">Phase 02 <span aria-hidden="true">/</span> Database foundation</span>
+        </div>
+      </header>
+
+      <div className="main-area">
+        <main id="main-content" className={`content${isOverview ? ' content-overview' : ' content-subpage'}`}>
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+}

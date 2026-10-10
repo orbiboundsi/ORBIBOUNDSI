@@ -1,6 +1,44 @@
 import Link from 'next/link';
 import { AppShell } from '../components/app-shell';
 import { AssetList } from '../components/asset-list';
-import { RefreshButton } from '../components/refresh-button';
 
-export default function HomePage(): React.ReactElement { return <AppShell><div className="page-header"><div><h1 className="page-title">Operations overview</h1><p className="page-description">Monitor satellite-derived risk across your geographic areas of interest.</p></div><div className="header-actions"><RefreshButton /><Link className="button button-primary" href="/assets/new">Add monitored asset</Link></div></div><div className="metrics-grid"><article className="metric-card"><div className="metric-label">Monitored assets</div><div className="metric-value">—</div><div className="metric-note">Connected to asset feed</div></article><article className="metric-card"><div className="metric-label">High-risk assets</div><div className="metric-value">—</div><div className="metric-note">Threshold-based</div></article><article className="metric-card"><div className="metric-label">Last successful run</div><div className="metric-value">—</div><div className="metric-note good">Pipeline telemetry</div></article><article className="metric-card"><div className="metric-label">Alert delivery</div><div className="metric-value">—</div><div className="metric-note">Webhook and email</div></article></div><div className="panel" style={{ marginBottom: 24 }}><div className="panel-header"><div><h2 className="panel-title">Risk map workspace</h2><div className="panel-caption">MapLibre AOI visualization will be enabled in Phase 8D</div></div><span className="status-badge">MAP MODULE PENDING</span></div><div className="empty-state" style={{ minHeight: 170, display: 'grid', placeItems: 'center' }}><div><strong>Spatial workspace ready</strong>The map layer will use real monitored asset boundaries once the AOI editor is enabled.</div></div></div><AssetList /></AppShell> }
+export default function HomePage(): React.ReactElement {
+  return (
+    <AppShell>
+      <section className="overview-hero" aria-labelledby="overview-title">
+        <div className="hero-image" aria-hidden="true" />
+        <div className="hero-overlay" aria-hidden="true" />
+        <div className="hero-content">
+          <p className="eyebrow">OrbiBound AI <span aria-hidden="true">/</span> Early-stage geospatial intelligence</p>
+          <h1 id="overview-title" className="hero-title">A clearer view of place-based change.</h1>
+          <p className="hero-description">
+            Set up areas of interest and the rules you want to apply. Satellite processing, risk scoring and alerts are not active in this build.
+          </p>
+          <div className="hero-actions">
+            <Link className="button button-primary" href="/assets/new">Add monitored asset</Link>
+            <Link className="text-link" href="#assets">View monitored assets</Link>
+          </div>
+          <p className="hero-note">Area-of-interest setup is implemented. Operational satellite observations are not shown here.</p>
+        </div>
+        <p className="image-credit">
+          NASA / Artemis II <span aria-hidden="true">·</span> Contextual photograph, not OrbiBound asset data <span aria-hidden="true">·</span>{' '}
+          <a href="https://www.nasa.gov/gallery/journey-to-the-moon/" target="_blank" rel="noreferrer">Image source</a>
+        </p>
+      </section>
+
+      <section className="workspace-status" aria-labelledby="workspace-status-title">
+        <div className="section-heading">
+          <p className="eyebrow">Workspace status <span aria-hidden="true">/</span> Phase 02</p>
+          <h2 id="workspace-status-title">Foundation in progress</h2>
+        </div>
+        <ul className="status-list">
+          <li><span>Area-of-interest setup</span><span className="status-value">Implemented</span></li>
+          <li><span>Satellite observations and processing</span><span className="status-value">Not active</span></li>
+          <li><span>Risk scoring and alert delivery</span><span className="status-value">Not active</span></li>
+        </ul>
+      </section>
+
+      <AssetList />
+    </AppShell>
+  );
+}
