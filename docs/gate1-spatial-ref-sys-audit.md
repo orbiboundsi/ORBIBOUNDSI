@@ -1,8 +1,8 @@
 # Gate 1 — `spatial_ref_sys` Read-only Supabase Audit
 
-**Audit date:** 2026-10-10  
-**Project:** `ORBIBOUNDSI production` (`thrgxznmblxtlzbicsrk`)  
-**Scope:** Grants, RLS/policies, event-trigger auto-RLS behavior, PostGIS `SECURITY DEFINER` functions, default privileges, extension metadata, and repository references.  
+**Audit date:** 2026-10-10
+**Project:** `ORBIBOUNDSI production` (`thrgxznmblxtlzbicsrk`)
+**Scope:** Grants, RLS/policies, event-trigger auto-RLS behavior, PostGIS `SECURITY DEFINER` functions, default privileges, extension metadata, and repository references.
 **Change policy:** Read-only audit only. No data, grant, policy, function, extension, or migration change was executed.
 
 ## Executive finding
@@ -172,3 +172,60 @@ The next action requires a separate implementation approval and should be perfor
 7. Prepare a reversible production migration only after staging passes.
 
 **Audit conclusion:** Gate 1 has produced a confirmed critical finding and a safe remediation decision point. No production security change should be claimed until the staging compatibility test and explicit approval are complete.
+
+## Addendum — Local Candidate Test Result
+
+**Date:** 2026-10-10
+**Scope:** Disposable local PostgreSQL 16/PostGIS 3.4 harness only. Production was not changed.
+
+The local test identified an important PostgreSQL privilege detail: revoking privileges from `anon` and `authenticated` alone does not remove an inherited `PUBLIC` table grant. The tested candidate therefore explicitly removes `PUBLIC` access and resets `service_role` to read-only before granting its required access:
+
+```sql
+REVOKE ALL PRIVILEGES
+ON TABLE public.spatial_ref_sys
+FROM anon, authenticated, PUBLIC, service_role;
+
+GRANT SELECT
+ON TABLE public.spatial_ref_sys
+TO service_role;
+```
+
+The local candidate passed the following checks:
+
+- `anon` cannot read the table.
+- `authenticated` cannot read the table.
+- `PUBLIC` cannot provide inherited access.
+- `service_role` can read CRS metadata.
+- PostGIS CRS transformation remains functional with trusted read access.
+- Existing repository migrations, tenant/RLS checks, worker RPC grant checks, CRS checks, 23 tests, and typecheck passed in the disposable harness.
+- Candidate rollback completed successfully.
+
+### Test limitations
+
+- The harness was socket-only PostgreSQL 16/PostGIS 3.4, not the official Supabase local stack.
+- Production is PostgreSQL 17/PostGIS 3.3.7.
+- The harness did not reproduce the production default ACLs.
+- Therefore this is a candidate result, not production approval or hosted Supabase compatibility proof.
+
+### Candidate file
+
+The non-production candidate is stored at:
+
+`supabase/migrations/candidates/20261010_gate1_spatial_ref_sys_no_public_access.sql`
+
+It intentionally does not enable RLS on the extension-managed table, alter PostGIS C functions, or modify production.
+
+## Separate default-privilege remediation review
+
+The production audit also found broad default privileges on public tables, functions, and sequences. These will not be combined blindly with the `spatial_ref_sys` candidate. Before any default-privilege migration is proposed, staging must verify:
+
+1. Which grantor context (`postgres` or `supabase_admin`) owns each default ACL.
+2. Whether changing defaults affects Supabase-managed objects or extensions.
+3. Whether future OrbiBound migrations receive the intended least-privilege defaults.
+4. Whether existing application-table grants remain unchanged.
+5. Whether future public functions and sequences remain usable by trusted server paths.
+6. Whether a reversible `ALTER DEFAULT PRIVILEGES` sequence is supported in the target environment.
+
+## Separate `rls_auto_enable()` review
+
+`public.rls_auto_enable()` remains an active event-trigger function with `search_path = pg_catalog`. Its direct `anon` and `authenticated` execute grants are unnecessary for normal application use, but no grant change is included in the candidate. The function's event-trigger ownership, behavior, and Supabase-managed compatibility must be tested separately before proposing a revoke.

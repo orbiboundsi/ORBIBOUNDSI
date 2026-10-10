@@ -1007,3 +1007,11 @@ Migration `h4_claim_warmup_assets` was applied to project `thrgxznmblxtlzbicsrk`
 ### Remaining H4 gate
 
 The managed scheduler itself must be configured and its execution history/smoke test recorded in the selected deployment environment. Local run-once success does not claim that a remote 15-minute scheduler is active.
+
+## Gate 1 Candidate Addendum — No Public `spatial_ref_sys` Access
+
+**Status:** Candidate prepared; production not applied.
+
+The local disposable harness proved that revoking only `anon` and `authenticated` is insufficient when a `PUBLIC` table grant remains. The candidate therefore explicitly revokes table privileges from `anon`, `authenticated`, `PUBLIC`, and `service_role`, then grants `service_role` `SELECT` only. It does not enable RLS on the extension-managed table or alter PostGIS C functions.
+
+Default privileges and `rls_auto_enable()` grants remain separate review workstreams. They require target-environment testing before any migration is proposed.
