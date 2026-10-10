@@ -229,3 +229,33 @@ The production audit also found broad default privileges on public tables, funct
 ## Separate `rls_auto_enable()` review
 
 `public.rls_auto_enable()` remains an active event-trigger function with `search_path = pg_catalog`. Its direct `anon` and `authenticated` execute grants are unnecessary for normal application use, but no grant change is included in the candidate. The function's event-trigger ownership, behavior, and Supabase-managed compatibility must be tested separately before proposing a revoke.
+
+## Addendum 2 — PostgreSQL 17 `MAINTAIN` Coverage
+
+PostgreSQL 17 includes the table-level `MAINTAIN` privilege. The candidate uses `REVOKE ALL PRIVILEGES`, which covers `MAINTAIN` as well as the previously enumerated table privileges. The candidate comments and regression assertions now explicitly cover:
+
+- `SELECT`
+- `INSERT`
+- `UPDATE`
+- `DELETE`
+- `TRUNCATE`
+- `REFERENCES`
+- `TRIGGER`
+- `MAINTAIN`
+
+The expected post-candidate contract is:
+
+- `anon`: none of the above privileges
+- `authenticated`: none of the above privileges
+- `PUBLIC`: no inherited table privileges
+- `service_role`: `SELECT` only; no write, maintenance, truncate, trigger, or reference privilege
+
+A read-only assertion file is available at:
+
+`supabase/tests/gate1_spatial_ref_sys_privileges.sql`
+
+It is intended for a disposable/staging database after candidate application. It raises an exception if any denied privilege remains and verifies that `service_role` retains `SELECT`. The assertion is designed for PostgreSQL 17 privilege semantics.
+
+### Compatibility status
+
+The repository now contains the PostgreSQL 17/PostGIS 3.3.x target contract and assertions, but an actual PostgreSQL 17/PostGIS 3.3.7 execution has not yet been performed in this sandbox. The earlier disposable harness used PostgreSQL 16/PostGIS 3.4. This distinction remains a release gate; production has not been changed.

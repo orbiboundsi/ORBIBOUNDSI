@@ -1015,3 +1015,7 @@ The managed scheduler itself must be configured and its execution history/smoke 
 The local disposable harness proved that revoking only `anon` and `authenticated` is insufficient when a `PUBLIC` table grant remains. The candidate therefore explicitly revokes table privileges from `anon`, `authenticated`, `PUBLIC`, and `service_role`, then grants `service_role` `SELECT` only. It does not enable RLS on the extension-managed table or alter PostGIS C functions.
 
 Default privileges and `rls_auto_enable()` grants remain separate review workstreams. They require target-environment testing before any migration is proposed.
+
+## Gate 1 Addendum 2 — PostgreSQL 17 `MAINTAIN` Validation Contract
+
+The `spatial_ref_sys` candidate explicitly documents PostgreSQL 17 `MAINTAIN` coverage through `REVOKE ALL PRIVILEGES`. A read-only assertion script checks all denied privileges for `anon`, `authenticated`, and `service_role`, while preserving `service_role SELECT`. Actual PostgreSQL 17/PostGIS 3.3.7 execution remains pending because no compatible local runtime is currently available; production remains untouched.
