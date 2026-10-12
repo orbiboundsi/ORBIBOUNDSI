@@ -3,7 +3,7 @@
 **Audit date:** 2026-10-10
 **Project:** `ORBIBOUNDSI production` (`thrgxznmblxtlzbicsrk`)
 **Scope:** Grants, RLS/policies, event-trigger auto-RLS behavior, PostGIS `SECURITY DEFINER` functions, default privileges, extension metadata, and repository references.
-**Change policy:** Read-only audit only. No data, grant, policy, function, extension, or migration change was executed.
+**Change policy:** Production audit and grant checks were read-only; candidate validation and rollback ran only in a disposable local database. No production data, grant, policy, function, extension, or migration was changed.
 
 ## Executive finding
 
@@ -11,7 +11,7 @@
 
 - RLS is disabled.
 - No RLS policies exist.
-- `anon` and `authenticated` have full table privileges, including `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `REFERENCES`, and `TRIGGER`.
+- `anon` and `authenticated` have full table privileges, including `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `REFERENCES`, `TRIGGER`, and PostgreSQL 17's `MAINTAIN` privilege.
 - The table is extension-managed PostGIS metadata, owned by `supabase_admin`.
 - PostGIS is version `3.3.7` and the table is associated with the `postgis` extension.
 
@@ -43,6 +43,10 @@ The correct remediation is **not** to blindly enable RLS. The application curren
 | `postgres` | `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `REFERENCES`, `TRIGGER` |
 
 No grant in the result was grantable onward (`is_grantable = NO`). The absence of RLS means these table grants are not narrowed by row policies.
+
+### Follow-up live `MAINTAIN` ACL check (2026-10-10)
+
+A filtered `information_schema.role_table_grants` query for `MAINTAIN` returned no rows, but a direct `pg_class.relacl` expansion on the live PostgreSQL 17 project found non-grantable `MAINTAIN` privileges on `public.spatial_ref_sys` for `anon`, `authenticated`, `service_role`, `postgres`, and `supabase_admin`. A separate `has_table_privilege` check confirmed effective `MAINTAIN` access for `anon`, `authenticated`, `service_role`, and `postgres`. The initial privilege list above omitted `MAINTAIN`; this follow-up confirms API roles had maintenance capability in addition to their listed table rights while RLS was disabled. The candidate revokes it from `anon`, `authenticated`, and `service_role` along with the other table privileges; owner/admin privileges are not targeted.
 
 ## 3. RLS auto-enable mechanism
 
@@ -139,7 +143,20 @@ This supports testing a **no public access** policy first, while preserving trus
 
 ### Option A — No public access (recommended starting point)
 
-- Revoke `anon`/`authenticated` table privileges on `spatial_ref_sys`.
+Revoke all table privileges from `anon`, `authenticated`, `PUBLIC`, and `service_role`, then grant `SELECT` only to the trusted server-side `service_role`:
+
+```sql
+REVOKE ALL PRIVILEGES
+ON TABLE public.spatial_ref_sys
+FROM anon, authenticated, PUBLIC, service_role;
+
+GRANT SELECT
+ON TABLE public.spatial_ref_sys
+TO service_role;
+```
+
+`REVOKE ALL PRIVILEGES` also removes PostgreSQL 17's `MAINTAIN` privilege. `anon`, `authenticated`, and `PUBLIC` retain no table access; `service_role` retains `SELECT` only among these application roles. Owner/admin privileges are not targeted.
+
 - Do not expose the table through PostgREST.
 - Preserve trusted server-side PostGIS operations and test all current geometry/CRS paths in staging.
 - Review/restrict direct execute grants on `rls_auto_enable()`.
@@ -176,36 +193,27 @@ The next action requires a separate implementation approval and should be perfor
 ## Addendum — Local Candidate Test Result
 
 **Date:** 2026-10-10
-**Scope:** Disposable local PostgreSQL 16/PostGIS 3.4 harness only. Production was not changed.
+**Scope:** Disposable local PostgreSQL 17.11 with PostGIS 3.3.7 core geometry/CRS modules; candidate database only. Production was not changed.
 
-The local test identified an important PostgreSQL privilege detail: revoking privileges from `anon` and `authenticated` alone does not remove an inherited `PUBLIC` table grant. The tested candidate therefore explicitly removes `PUBLIC` access and resets `service_role` to read-only before granting its required access:
+The local fixture reproduced the live `spatial_ref_sys` grants, including direct full table privileges (including `MAINTAIN`) for `anon`, `authenticated`, and `service_role`, `PUBLIC` `SELECT`, ownership by `supabase_admin`, and public-schema default privileges for tables, functions, and sequences under both `postgres` and `supabase_admin` creator contexts. The current repository migrations were replayed against that fixture before candidate testing.
 
-```sql
-REVOKE ALL PRIVILEGES
-ON TABLE public.spatial_ref_sys
-FROM anon, authenticated, PUBLIC, service_role;
+The candidate passed these checks:
 
-GRANT SELECT
-ON TABLE public.spatial_ref_sys
-TO service_role;
-```
-
-The local candidate passed the following checks:
-
-- `anon` cannot read the table.
-- `authenticated` cannot read the table.
-- `PUBLIC` cannot provide inherited access.
-- `service_role` can read CRS metadata.
-- PostGIS CRS transformation remains functional with trusted read access.
-- Existing repository migrations, tenant/RLS checks, worker RPC grant checks, CRS checks, 23 tests, and typecheck passed in the disposable harness.
-- Candidate rollback completed successfully.
+- `anon` and `authenticated` were denied table reads and had no effective table privileges, including `MAINTAIN`; no `PUBLIC` table ACL remained.
+- `service_role` retained `SELECT` only, with `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `REFERENCES`, `TRIGGER`, and `MAINTAIN` denied.
+- `service_role` could read SRID metadata and successfully run `ST_Transform` from EPSG:4326 to EPSG:3857.
+- The candidate left `spatial_ref_sys` RLS disabled and did not alter PostGIS function definitions or default privileges.
+- Default table, function, and sequence grants were directly checked for new objects created under both audited default-ACL owners.
+- All current repository migrations and schema checks passed; six application tables remained RLS-enabled, expected indexes existed, tenant isolation held, API roles were denied the worker RPC, and `service_role` successfully claimed one due schedule.
+- Candidate rollback restored the normalized pre-test `spatial_ref_sys` ACL, including the baseline `MAINTAIN` grants and `PUBLIC SELECT`; the default ACL state remained unchanged.
+- Workspace regression suite: **33 passed, 1 skipped**. Typecheck: **passed for all 8 workspace packages**.
 
 ### Test limitations
 
-- The harness was socket-only PostgreSQL 16/PostGIS 3.4, not the official Supabase local stack.
-- Production is PostgreSQL 17/PostGIS 3.3.7.
-- The harness did not reproduce the production default ACLs.
-- Therefore this is a candidate result, not production approval or hosted Supabase compatibility proof.
+- The PostGIS 3.3.7 source build against PostgreSQL 17.11 failed in the optional Raster module (`rtpg_geometry.c`: `MIN` undeclared); the successful build used `--without-raster`. Geometry/CRS behavior used by this candidate was tested, but Raster compatibility was not tested.
+- No official Supabase local stack was used, and no PostgREST-over-HTTP validation was performed. Supabase-managed event-trigger behavior was not exercised; API-role denial was tested with local PostgreSQL role sessions.
+- The local build used GEOS 3.14.1 and PROJ 9.8.1; hosted Supabase compatibility is not established by these tests.
+- This is local candidate evidence only, not production approval or hosted Supabase compatibility proof. Any staging/production application remains a separate approval and verification gate.
 
 ### Candidate file
 
@@ -213,7 +221,9 @@ The non-production candidate is stored at:
 
 `supabase/migrations/candidates/20261010_gate1_spatial_ref_sys_no_public_access.sql`
 
-It intentionally does not enable RLS on the extension-managed table, alter PostGIS C functions, or modify production.
+The PostgreSQL 17 privilege regression assertion is `supabase/tests/gate1_spatial_ref_sys_privileges.sql`. It checks that the intended grant contract remains true and is for disposable/staging validation only.
+
+The local file matches the candidate in GitHub commit `2e4626f` byte-for-byte. It intentionally does not enable RLS on the extension-managed table, alter PostGIS C functions, or modify production.
 
 ## Separate default-privilege remediation review
 
@@ -229,33 +239,3 @@ The production audit also found broad default privileges on public tables, funct
 ## Separate `rls_auto_enable()` review
 
 `public.rls_auto_enable()` remains an active event-trigger function with `search_path = pg_catalog`. Its direct `anon` and `authenticated` execute grants are unnecessary for normal application use, but no grant change is included in the candidate. The function's event-trigger ownership, behavior, and Supabase-managed compatibility must be tested separately before proposing a revoke.
-
-## Addendum 2 — PostgreSQL 17 `MAINTAIN` Coverage
-
-PostgreSQL 17 includes the table-level `MAINTAIN` privilege. The candidate uses `REVOKE ALL PRIVILEGES`, which covers `MAINTAIN` as well as the previously enumerated table privileges. The candidate comments and regression assertions now explicitly cover:
-
-- `SELECT`
-- `INSERT`
-- `UPDATE`
-- `DELETE`
-- `TRUNCATE`
-- `REFERENCES`
-- `TRIGGER`
-- `MAINTAIN`
-
-The expected post-candidate contract is:
-
-- `anon`: none of the above privileges
-- `authenticated`: none of the above privileges
-- `PUBLIC`: no inherited table privileges
-- `service_role`: `SELECT` only; no write, maintenance, truncate, trigger, or reference privilege
-
-A read-only assertion file is available at:
-
-`supabase/tests/gate1_spatial_ref_sys_privileges.sql`
-
-It is intended for a disposable/staging database after candidate application. It raises an exception if any denied privilege remains and verifies that `service_role` retains `SELECT`. The assertion is designed for PostgreSQL 17 privilege semantics.
-
-### Compatibility status
-
-The repository now contains the PostgreSQL 17/PostGIS 3.3.x target contract and assertions, but an actual PostgreSQL 17/PostGIS 3.3.7 execution has not yet been performed in this sandbox. The earlier disposable harness used PostgreSQL 16/PostGIS 3.4. This distinction remains a release gate; production has not been changed.
