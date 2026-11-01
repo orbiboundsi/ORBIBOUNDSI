@@ -1,0 +1,1 @@
+{"routes":[{"path":"/","title":"OrbiBound AI"},{"path":"/app","title":"Operations overview"},{"path":"/assets/new","title":"Add monitored asset"},{"path":"/auth/login","title":"Sign in"},{"path":"/auth/signup","title":"Request early access"},{"path":"/auth/reset","title":"Reset password"},{"path":"/auth/update-password","title":"Update password"}]}
